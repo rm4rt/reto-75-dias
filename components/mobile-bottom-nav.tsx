@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/dashboard", label: "Inicio", icon: "🏠" },
   { href: "/progress", label: "Progreso", icon: "📸" },
-  { href: "/tracking", label: "Seguimiento", icon: "📊" },
+  { href: "/tracking", label: "Tracking", icon: "📊" },
+  { href: "/fasting", label: "Ayuno", icon: "⏱" },
   { href: "/profile", label: "Perfil", icon: "👤" },
 ];
 
@@ -15,7 +16,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-neutral-950/95 backdrop-blur">
-      <div className="mx-auto grid h-20 w-full max-w-md grid-cols-4">
+      <div className="mx-auto grid h-20 w-full max-w-md grid-cols-5">
         {items.map((item) => {
           const isActive = pathname === item.href;
 
