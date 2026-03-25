@@ -123,7 +123,7 @@ export default function TrackingPage() {
                     fontSize: 12,
                     color: "rgba(255,255,255,0.9)",
                   }}
-                  formatter={(v: number) => [`${v} kg`, "Peso"]}
+                  formatter={(v) => [v != null ? `${v} kg` : "—", "Peso"]}
                   labelFormatter={(l) => `Día ${l}`}
                 />
                 <Line
