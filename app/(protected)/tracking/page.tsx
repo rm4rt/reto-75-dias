@@ -21,35 +21,93 @@ type WeightEntry = {
   created_at: string;
 };
 
-function relativeLabel(createdAt: string): string {
-  const diffDays = Math.floor(
-    (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24)
-  );
-  if (diffDays === 0) return "Hoy";
-  if (diffDays === 1) return "Ayer";
-  return `Hace ${diffDays} días`;
-}
+type FastingSession = {
+  id: string;
+  start_time: string;
+  end_time: string;
+  duration_hours: number | null;
+  target_hours: number;
+};
+
+type TimelineItem = {
+  key: string;
+  dateISO: string;
+  dateLabel: string;
+  type: "weight" | "fasting";
+  label: string;
+  meta?: string;
+};
 
 export default function TrackingPage() {
-  const { weight, startWeight, goalWeight, updateWeight, addDay, day } = useAppStore();
+  const { weight, startWeight, goalWeight } = useAppStore();
   const { user } = useUser();
   const [entries, setEntries] = useState<WeightEntry[]>([]);
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
-    const fetchEntries = async () => {
+    const fetchData = async () => {
       if (!user?.id) return;
-      const { data, error } = await supabase
-        .from("weight_entries")
-        .select("*")
-        .eq("clerk_user_id", user.id)
-        .order("created_at", { ascending: true });
-      if (error) {
-        console.error("[Supabase] weight_entries fetch failed:", error);
-        return;
+
+      const [{ data: weightData }, { data: fastingData }] = await Promise.all([
+        supabase
+          .from("weight_entries")
+          .select("*")
+          .eq("clerk_user_id", user.id)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("fasting_sessions")
+          .select("id, start_time, end_time, duration_hours, target_hours")
+          .eq("clerk_user_id", user.id)
+          .not("end_time", "is", null)
+          .order("end_time", { ascending: false })
+          .limit(30),
+      ]);
+
+      setEntries(weightData ?? []);
+
+      // Build combined timeline
+      const items: TimelineItem[] = [];
+
+      for (const w of weightData ?? []) {
+        const d = new Date(w.created_at);
+        items.push({
+          key: `w-${w.id}`,
+          dateISO: w.created_at,
+          dateLabel: d.toLocaleDateString("es-ES", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          }),
+          type: "weight",
+          label: `Peso registrado: ${Number(w.weight).toFixed(1)} kg`,
+          meta: d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+        });
       }
-      setEntries(data ?? []);
+
+      for (const f of fastingData ?? []) {
+        const d = new Date(f.end_time);
+        const goalMet = (f.duration_hours ?? 0) >= f.target_hours;
+        items.push({
+          key: `f-${f.id}`,
+          dateISO: f.end_time,
+          dateLabel: d.toLocaleDateString("es-ES", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          }),
+          type: "fasting",
+          label: `Ayuno ${(f.duration_hours ?? 0).toFixed(1)}h${goalMet ? " completado" : ""}`,
+          meta: goalMet ? "✓" : undefined,
+        });
+      }
+
+      // Sort descending by date
+      items.sort((a, b) => new Date(b.dateISO).getTime() - new Date(a.dateISO).getTime());
+      setTimeline(items.slice(0, 30));
     };
-    fetchEntries();
+
+    fetchData();
   }, [user?.id]);
 
   const chartData = entries.map((e) => ({
@@ -57,31 +115,27 @@ export default function TrackingPage() {
     weight: Number(e.weight),
   }));
 
-  const recentEntries = [...entries].reverse().slice(0, 4);
-
   return (
     <section className="flex flex-col gap-5">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Seguimiento</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Historial</h1>
         <p className="mt-1 text-sm text-white/60">
-          Controla tu peso, tu avance y tu actividad reciente.
+          Evolución de tu peso y actividad reciente.
         </p>
       </div>
 
+      {/* Weight stats */}
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
         <p className="text-sm text-white/60">Peso actual</p>
-
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div className="rounded-2xl bg-white/5 p-4">
             <p className="text-xs text-white/50">Actual</p>
             <p className="mt-1 text-xl font-bold">{weight} kg</p>
           </div>
-
           <div className="rounded-2xl bg-white/5 p-4">
             <p className="text-xs text-white/50">Inicio</p>
             <p className="mt-1 text-xl font-bold">{startWeight} kg</p>
           </div>
-
           <div className="rounded-2xl bg-white/5 p-4">
             <p className="text-xs text-white/50">Meta</p>
             <p className="mt-1 text-xl font-bold">{goalWeight} kg</p>
@@ -89,9 +143,9 @@ export default function TrackingPage() {
         </div>
       </div>
 
+      {/* Weight chart */}
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
         <p className="text-sm text-white/60">Evolución de peso</p>
-
         {chartData.length < 2 ? (
           <p className="mt-4 text-xs text-white/40">
             Registra al menos 2 pesos para ver la gráfica.
@@ -113,7 +167,6 @@ export default function TrackingPage() {
                   tickLine={false}
                   axisLine={false}
                   domain={["auto", "auto"]}
-                  tickFormatter={(v) => `${v}`}
                 />
                 <Tooltip
                   contentStyle={{
@@ -140,57 +193,48 @@ export default function TrackingPage() {
         )}
       </div>
 
+      {/* Combined timeline */}
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-        <p className="text-sm text-white/60">Historial reciente</p>
+        <p className="text-sm text-white/60">Actividad reciente</p>
 
-        <div className="mt-4 flex flex-col gap-3">
-          {recentEntries.length === 0 ? (
+        <div className="mt-4 flex flex-col gap-2">
+          {timeline.length === 0 ? (
             <p className="text-xs text-white/40">
-              Aún no hay registros. Usa el check-in de peso en el dashboard.
+              Aún no hay actividad registrada.
             </p>
           ) : (
-            recentEntries.map((entry) => (
-              <div
-                key={entry.id}
-                className="rounded-2xl border border-white/10 bg-white/5 p-4"
-              >
-                <p className="text-sm font-semibold text-white/90">
-                  {Number(entry.weight).toFixed(1)} kg
-                </p>
-                <p className="text-xs text-white/60">
-                  {relativeLabel(entry.created_at)} · Día {entry.day}
-                </p>
-              </div>
-            ))
+            <>
+              {(showAll ? timeline : timeline.slice(0, 5)).map((item) => (
+                <div
+                  key={item.key}
+                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs text-white/60">
+                    {item.type === "fasting" ? "⏱" : "⚖"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-white/85">{item.label}</p>
+                    <p className="text-xs text-white/40">
+                      {item.dateLabel}
+                      {item.meta && item.type === "weight" ? ` · ${item.meta}` : ""}
+                    </p>
+                  </div>
+                  {item.type === "fasting" && item.meta === "✓" && (
+                    <span className="shrink-0 text-xs text-green-400">{item.meta}</span>
+                  )}
+                </div>
+              ))}
+
+              {!showAll && timeline.length > 5 && (
+                <button
+                  onClick={() => setShowAll(true)}
+                  className="mt-1 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-3 text-xs font-medium text-white/50 transition hover:bg-white/[0.06] hover:text-white/70"
+                >
+                  Ver historial completo ({timeline.length} registros)
+                </button>
+              )}
+            </>
           )}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-        <p className="text-sm text-white/60">Ayuno</p>
-        <div className="mt-4">
-          <p className="text-3xl font-bold text-white/90">14h 32m</p>
-          <p className="mt-1 text-sm text-white/60">En curso</p>
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-        <p className="text-sm text-white/60">Acciones rápidas</p>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <button
-            className="rounded-2xl bg-white px-4 py-4 text-sm font-semibold text-black shadow-lg transition hover:scale-[1.02]"
-            onClick={() => updateWeight(weight - 0.5)}
-          >
-            -0.5 kg
-          </button>
-
-          <button
-            className="rounded-2xl bg-white/10 px-4 py-4 text-sm font-semibold text-white transition hover:bg-white/20 hover:scale-[1.02]"
-            onClick={() => addDay()}
-          >
-            Día {day + 1}
-          </button>
         </div>
       </div>
     </section>

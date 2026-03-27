@@ -6,9 +6,9 @@ export default function AppHeader() {
       <div className="mx-auto flex h-16 w-full max-w-md items-center justify-between px-4">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-white/50">
-            Reto 75 días
+            Ayuno & Metabolismo
           </p>
-          <h1 className="text-sm font-semibold text-white">Tu transformación</h1>
+          <h1 className="text-sm font-semibold text-white">Tu progreso metabólico</h1>
         </div>
 
         <UserButton

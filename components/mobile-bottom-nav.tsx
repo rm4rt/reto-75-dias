@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/dashboard", label: "Inicio", icon: "🏠" },
-  { href: "/progress", label: "Progreso", icon: "📸" },
-  { href: "/tracking", label: "Tracking", icon: "📊" },
-  { href: "/fasting", label: "Ayuno", icon: "⏱" },
-  { href: "/profile", label: "Perfil", icon: "👤" },
+  { href: "/fasting",  label: "Inicio",      icon: "🏠" },
+  { href: "/ai",       label: "IA",          icon: "✦" },
+  { href: "/progress", label: "Tu progreso", icon: "📸" },
+  { href: "/tracking", label: "Historial",   icon: "📊" },
+  { href: "/profile",  label: "Perfil",      icon: "👤" },
 ];
 
 export default function MobileBottomNav() {

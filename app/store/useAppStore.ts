@@ -9,6 +9,9 @@ type State = {
   startWeight: number;
   goalWeight: number;
   heightCm: number;
+  feedingWindowStart: string | null;
+  feedingWindowEnd: string | null;
+  feedingWindowHours: number | null;
 };
 
 type Actions = {
@@ -24,6 +27,8 @@ type Actions = {
     startWeight: number;
     goalWeight: number;
   }) => void;
+  setFeedingWindow: (start: string, end: string, hours: number) => void;
+  clearFeedingWindow: () => void;
 };
 
 export const useAppStore = create<State & Actions>()(
@@ -34,6 +39,9 @@ export const useAppStore = create<State & Actions>()(
       startWeight: 85,
       goalWeight: 75,
       heightCm: 170,
+      feedingWindowStart: null,
+      feedingWindowEnd: null,
+      feedingWindowHours: null,
 
       addDay: () =>
         set((state) => ({
@@ -69,6 +77,20 @@ export const useAppStore = create<State & Actions>()(
           startWeight: data.startWeight,
           goalWeight: data.goalWeight,
         })),
+
+      setFeedingWindow: (start, end, hours) =>
+        set(() => ({
+          feedingWindowStart: start,
+          feedingWindowEnd: end,
+          feedingWindowHours: hours,
+        })),
+
+      clearFeedingWindow: () =>
+        set(() => ({
+          feedingWindowStart: null,
+          feedingWindowEnd: null,
+          feedingWindowHours: null,
+        })),
     }),
     {
       name: "reto-75-dias-store",
@@ -79,6 +101,9 @@ export const useAppStore = create<State & Actions>()(
         startWeight: state.startWeight,
         goalWeight: state.goalWeight,
         heightCm: state.heightCm,
+        feedingWindowStart: state.feedingWindowStart,
+        feedingWindowEnd: state.feedingWindowEnd,
+        feedingWindowHours: state.feedingWindowHours,
       }),
     }
   )

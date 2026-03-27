@@ -13,25 +13,37 @@ type PhotoRow = {
   created_at: string;
 };
 
+type WeightEntry = {
+  id: string;
+  weight: number;
+  day: number;
+  created_at: string;
+};
+
 function getPublicUrl(path: string) {
   return supabase.storage.from("progress-photos").getPublicUrl(path).data.publicUrl;
 }
 
 export default function ProgressPage() {
   const { user } = useUser();
-  const { day } = useAppStore();
+  const { day, weight, updateWeight } = useAppStore();
 
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteValue, setEditingNoteValue] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [pendingDay, setPendingDay] = useState<number>(day);
+  const [pendingDay, setPendingDay] = useState<string>(String(day));
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Weight logging state
+  const [weightInput, setWeightInput] = useState<string>(String(weight));
+  const [todayEntries, setTodayEntries] = useState<WeightEntry[]>([]);
+  const [weightSaving, setWeightSaving] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -54,6 +66,41 @@ export default function ProgressPage() {
     };
     fetchPhotos();
   }, [user?.id]);
+
+  // Fetch today's weight entries to enforce max-2-per-day
+  useEffect(() => {
+    const fetchTodayEntries = async () => {
+      if (!user?.id) return;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from("weight_entries")
+        .select("*")
+        .eq("clerk_user_id", user.id)
+        .gte("created_at", `${todayStr}T00:00:00`)
+        .lte("created_at", `${todayStr}T23:59:59`)
+        .order("created_at", { ascending: true });
+      setTodayEntries(data ?? []);
+    };
+    fetchTodayEntries();
+  }, [user?.id]);
+
+  const handleWeightLog = async () => {
+    if (!user?.id || todayEntries.length >= 2 || weightSaving) return;
+    if (!weightInput.trim() || isNaN(Number(weightInput))) return;
+    setWeightSaving(true);
+    const numWeight = Number(weightInput);
+    const { data, error } = await supabase
+      .from("weight_entries")
+      .insert({ clerk_user_id: user.id, weight: numWeight, day })
+      .select()
+      .single();
+    if (!error && data) {
+      setTodayEntries((prev) => [...prev, data]);
+      updateWeight(numWeight);
+      showToast("Peso registrado");
+    }
+    setWeightSaving(false);
+  };
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
@@ -88,7 +135,7 @@ export default function ProgressPage() {
     const file = e.target.files?.[0] ?? null;
     console.log("[Upload] File selected:", file?.name ?? "none");
     setPendingFile(file);
-    setPendingDay(day);
+    setPendingDay(String(day));
     setUploadError(null);
     setUploadSuccess(false);
   };
@@ -107,8 +154,8 @@ export default function ProgressPage() {
       setUploadError("Selecciona una foto primero.");
       return;
     }
-    if (!pendingDay || pendingDay < 1 || pendingDay > 75) {
-      setUploadError("El día debe estar entre 1 y 75.");
+    if (!pendingDay.trim() || Number(pendingDay) < 1 || Number(pendingDay) > 365) {
+      setUploadError("El día debe estar entre 1 y 365.");
       return;
     }
 
@@ -134,7 +181,7 @@ export default function ProgressPage() {
 
     const { data: insertData, error: insertError } = await supabase
       .from("progress_photos")
-      .insert({ clerk_user_id: user.id, image_path: path, day: pendingDay, note: "" });
+      .insert({ clerk_user_id: user.id, image_path: path, day: Number(pendingDay), note: "" });
 
     console.log("[Upload] Insert result — data:", insertData, "error:", insertError);
 
@@ -164,8 +211,70 @@ export default function ProgressPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Mi progreso</h1>
         <p className="mt-1 text-sm text-white/60">
-          Compara tu evolución visual y revisa tus últimas actualizaciones.
+          Registra tu peso y compara tu evolución visual.
         </p>
+      </div>
+
+      {/* ── Daily weight log ── */}
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Peso de hoy</p>
+
+        {todayEntries.length >= 2 ? (
+          <div className="mt-3">
+            <p className="text-sm text-white/60">Ya has registrado 2 pesos hoy.</p>
+            <div className="mt-3 flex flex-col gap-2">
+              {todayEntries.map((e) => (
+                <div key={e.id} className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-2.5">
+                  <p className="text-sm font-semibold text-white/90">
+                    {Number(e.weight).toFixed(1)} kg
+                  </p>
+                  <p className="text-xs text-white/40">
+                    {new Date(e.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="number"
+                inputMode="decimal"
+                step={0.1}
+                value={weightInput}
+                onChange={(e) => setWeightInput(e.target.value)}
+                className="w-28 rounded-2xl bg-white/10 px-4 py-3 text-sm text-white outline-none ring-1 ring-white/10 focus:bg-white/20"
+              />
+              <span className="text-sm text-white/50">kg</span>
+              <button
+                onClick={handleWeightLog}
+                disabled={weightSaving}
+                className="ml-auto rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:scale-[1.02] disabled:opacity-50"
+              >
+                {weightSaving ? "…" : "Registrar"}
+              </button>
+            </div>
+
+            {todayEntries.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2">
+                {todayEntries.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-2.5">
+                    <p className="text-sm font-semibold text-white/90">
+                      {Number(e.weight).toFixed(1)} kg
+                    </p>
+                    <p className="text-xs text-white/40">
+                      {new Date(e.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                ))}
+                <p className="mt-1 text-xs text-white/35">
+                  {2 - todayEntries.length} registro más disponible hoy
+                </p>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {(() => {
@@ -292,9 +401,9 @@ export default function ProgressPage() {
                 <input
                   type="number"
                   min={1}
-                  max={75}
+                  max={365}
                   value={pendingDay}
-                  onChange={(e) => setPendingDay(Number(e.target.value))}
+                  onChange={(e) => setPendingDay(e.target.value)}
                   className="w-16 rounded-xl bg-white/10 px-3 py-1.5 text-sm text-white outline-none ring-1 ring-white/10 focus:bg-white/20"
                 />
               </label>
